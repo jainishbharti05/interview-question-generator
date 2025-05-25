@@ -33,40 +33,49 @@ class QuestionGenerator:
         # Use the middle of the range as default
         return (min_diff + max_diff) // 2
 
-    def _create_prompt(self, job_requirements: List[str], experience_level: ExperienceLevel, domain: Domain) -> str:
+    
+    def _calculate_similarity(self, text1: str, text2: str) -> float:
+        """Calculate a simple similarity score between two texts."""
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        return intersection / union if union > 0 else 0
+    
+    def _create_prompt(self, job_requirements: List[str], experience_level: ExperienceLevel, 
+                      domain: Domain, focus_requirement: str = None) -> str:
         domain_config = DOMAIN_CONFIGS[domain]
         level_config = DIFFICULTY_GUIDELINES[experience_level]
-        min_diff, max_diff = self.difficulty_ranges[experience_level]
-        
-        return f"""Generate a technical interview question that meets these criteria:
+        min_diff, max_diff = self.difficulty_ranges[experience_level]        # If no specific requirement is provided, use a general prompt
+        focus_text = ""
+        if focus_requirement:
+            focus_text = f"\nFocus: {focus_requirement}"
+            return f"""Generate a technical interview question for:
+                Domain: {domain}
+                Level: {experience_level} (Difficulty {min_diff}-{max_diff})
+                Skills: {', '.join(domain_config['key_skills'])}
+                Tech: {', '.join(domain_config['technologies'])}
+                Requirements: {', '.join(job_requirements)}{focus_text}
 
-Context:
-- Domain: {domain}
-- Level: {experience_level}
-- Difficulty: {min_diff}-{max_diff}
-- Skills: {', '.join(domain_config['key_skills'])}
-- Tech: {', '.join(domain_config['technologies'])}
-- Requirements: {', '.join(job_requirements)}
+                Format:
+                Question: [Detailed technical question with context]
 
-Focus:
-- Complexity: {level_config['complexity_level']}
-- Balance: {level_config['practical_weight'] * 100}% practical, {level_config['theoretical_weight'] * 100}% theoretical
-- Areas: {', '.join(level_config['focus_areas'])}
+                Skill Area: [Primary skill being assessed]
 
-Format:
-Question: [technical question]
+                Evaluation Criteria:
+                - Technical Knowledge: [Required technical concepts]
+                - Implementation: [Solution structure and approach]
+                - Best Practices: [Code quality and architecture]
+                - Problem-Solving: [Analysis and trade-offs]
 
-Skill Area: [primary skill tested]
+                Example Answer:
+                - Approach and analysis
+                - Implementation with code examples
+                - Technical considerations
+                - Best practices
+                - Optimizations
 
-Evaluation Criteria:
-- [criterion 1]
-- [criterion 2]
-- [criterion 3]
-- [criterion 4]
-
-Example Answer: [brief example/outline]
-
-Difficulty: [number {min_diff}-{max_diff}]"""
+                Difficulty: [number {min_diff}-{max_diff}]"""
 
     def _parse_response(self, response_text: str, experience_level: ExperienceLevel) -> Dict[str, Any]:
         try:
@@ -102,11 +111,12 @@ Difficulty: [number {min_diff}-{max_diff}]"""
             else:
                 logger.info("No difficulty provided in response, using default")
                 difficulty = self._get_default_difficulty(experience_level)
-            
-            example = next((p for p in sections if "example" in p.lower() and "answer" in p.lower()), None)
+            example = next((p for p in sections if any(p.lower().startswith(x) for x in ["example answer:", "example:", "example solution:"])), None)
             if not example:
+                logger.warning("Could not find example answer section")
                 raise QuestionGenerationError("Missing example answer")
-            example = example.split(":", 1)[1].strip()
+            # Split and join by ':' to handle cases where there might be colons in the answer
+            example = ':'.join(example.split(':')[1:]).strip()
             
             return {
                 "question": question,
@@ -116,22 +126,25 @@ Difficulty: [number {min_diff}-{max_diff}]"""
                 "example_answer": example
             }
         except Exception as e:
-            raise QuestionGenerationError(f"Failed to parse response: {str(e)}")
-
+            raise QuestionGenerationError(f"Failed to parse response: {str(e)}")    
+        
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def _generate_single_question(self, job_requirements: List[str], experience_level: ExperienceLevel, domain: Domain) -> Optional[Question]:
+    def _generate_single_question(self, job_requirements: List[str], experience_level: ExperienceLevel, 
+                                domain: Domain, focus_requirement: str = None) -> Optional[Question]:
         try:
-            prompt = self._create_prompt(job_requirements, experience_level, domain)
+            prompt = self._create_prompt(job_requirements, experience_level, domain, focus_requirement)
             logger.info("Generating question...")
-            logger.debug("Prompt: %s", prompt)
+            if focus_requirement:
+                logger.info("Focusing on requirement: %s", focus_requirement)            
+                system_prompt = "You are an expert technical interviewer. Generate challenging practical interview questions that test both theoretical knowledge and implementation skills, focus on real-world scenarios, and include clear evaluation criteria with example solutions."
             
             response = self.client.chat.completions.create(
                 model="mistralai/Mixtral-8x7B-Instruct-v0.1",
                 messages=[
-                    {"role": "system", "content": "You are an expert technical interviewer."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
+                temperature=0.8,  # Slightly reduced for more focused outputs
                 max_tokens=1000
             )
             
@@ -151,20 +164,47 @@ Difficulty: [number {min_diff}-{max_diff}]"""
                 
         except Exception as e:
             logger.exception("Failed to generate question: %s", str(e))
-            return None
-
+            return None    
+        
     def generate(self, job_requirements: List[str], experience_level: ExperienceLevel, 
                 domain: Domain, num_questions: int = 1) -> List[Question]:
         questions = []
         attempts = 0
-        max_attempts = num_questions * 2
+        max_attempts = num_questions * 3  # Increased max attempts for better diversity
+        used_skills = set()
         
         logger.info("Starting generation of %d questions", num_questions)
-        while len(questions) < num_questions and attempts < max_attempts:
-            if question := self._generate_single_question(job_requirements, experience_level, domain):
-                questions.append(question)
-                logger.info("Generated question %d/%d", len(questions), num_questions)
-            attempts += 1
+        
+        # First pass: Generate one question for each distinct requirement
+        for req in job_requirements:
+            if len(questions) >= num_questions:
+                break
             
+            # Skip if we've already covered this skill area
+            req_key = ' '.join(req.lower().split()[:3])
+            if req_key in used_skills:
+                continue
+            
+            if question := self._generate_single_question(job_requirements, experience_level, domain, req):
+                if not any(self._calculate_similarity(question.question, q.question) > 0.7 for q in questions):
+                    questions.append(question)
+                    used_skills.add(req_key)
+                    logger.info("Generated question for requirement: %s", req)
+            attempts += 1
+        
+        # Second pass: Fill remaining slots with additional questions
+        while len(questions) < num_questions and attempts < max_attempts:
+            # Choose an unused requirement if available
+            unused_reqs = [req for req in job_requirements 
+                         if not any(self._calculate_similarity(req.lower(), q.skill_area.lower()) > 0.5 
+                                  for q in questions)]
+            
+            focus_req = unused_reqs[attempts % len(unused_reqs)] if unused_reqs else None
+            if question := self._generate_single_question(job_requirements, experience_level, domain, focus_req):
+                if not any(self._calculate_similarity(question.question, q.question) > 0.7 for q in questions):
+                    questions.append(question)
+                    logger.info("Generated additional question %d/%d", len(questions), num_questions)
+            attempts += 1
+        
         logger.info("Completed generation with %d/%d questions", len(questions), num_questions)
         return questions
