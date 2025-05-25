@@ -4,7 +4,15 @@ from .models import QuestionRequest, QuestionResponse
 from .services.question_generator import QuestionGenerator
 
 app = FastAPI(title="Technical Interview Question Generator")
-app.add_middleware(CORSMiddleware, allow_origins=["*"])
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # Frontend development server
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 generator = QuestionGenerator()
 
