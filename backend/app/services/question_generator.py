@@ -11,6 +11,7 @@ load_dotenv()
 logger = setup_logger("question_generator")
 
 class QuestionGenerationError(Exception):
+    """Custom exception for question generation errors."""
     pass
 
 class QuestionGenerator:
@@ -30,7 +31,6 @@ class QuestionGenerator:
     def _get_default_difficulty(self, experience_level: ExperienceLevel) -> int:
         """Calculate a default difficulty based on experience level."""
         min_diff, max_diff = self.difficulty_ranges[experience_level]
-        # Use the middle of the range as default
         return (min_diff + max_diff) // 2
 
     
@@ -49,7 +49,7 @@ class QuestionGenerator:
         min_diff, max_diff = self.difficulty_ranges[experience_level]        # If no specific requirement is provided, use a general prompt
         focus_text = ""
         if focus_requirement:
-            focus_text = f"\nFocus: {focus_requirement}"
+            focus_text = f"\nFocus: {focus_requirement}"ff
             return f"""Generate a technical interview question for:
                 Domain: {domain}
                 Level: {experience_level} (Difficulty {min_diff}-{max_diff})
@@ -144,7 +144,7 @@ class QuestionGenerator:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.8,  # Slightly reduced for more focused outputs
+                temperature=0.8,  
                 max_tokens=1000
             )
             
@@ -156,7 +156,6 @@ class QuestionGenerator:
             
             min_diff, max_diff = self.difficulty_ranges[experience_level]
             if not (min_diff <= question_data["difficulty"] <= max_diff):
-                # If outside range, adjust to nearest valid value
                 question_data["difficulty"] = min(max(question_data["difficulty"], min_diff), max_diff)
                 logger.info("Adjusted difficulty to %d to match experience level", question_data["difficulty"])
             
@@ -170,17 +169,15 @@ class QuestionGenerator:
                 domain: Domain, num_questions: int = 1) -> List[Question]:
         questions = []
         attempts = 0
-        max_attempts = num_questions * 3  # Increased max attempts for better diversity
+        max_attempts = num_questions * 3  
         used_skills = set()
         
         logger.info("Starting generation of %d questions", num_questions)
         
-        # First pass: Generate one question for each distinct requirement
         for req in job_requirements:
             if len(questions) >= num_questions:
                 break
             
-            # Skip if we've already covered this skill area
             req_key = ' '.join(req.lower().split()[:3])
             if req_key in used_skills:
                 continue
@@ -192,9 +189,7 @@ class QuestionGenerator:
                     logger.info("Generated question for requirement: %s", req)
             attempts += 1
         
-        # Second pass: Fill remaining slots with additional questions
         while len(questions) < num_questions and attempts < max_attempts:
-            # Choose an unused requirement if available
             unused_reqs = [req for req in job_requirements 
                          if not any(self._calculate_similarity(req.lower(), q.skill_area.lower()) > 0.5 
                                   for q in questions)]
