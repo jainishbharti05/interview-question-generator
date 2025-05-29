@@ -3,20 +3,27 @@
 DOMAIN_CONFIGS = {
     "backend": {
         "key_skills": [
-            "API Design",
+            "RestFul API",
+            "Authentication",
+            "Database Design",
+            "Authorization",
             "Database Architecture",
             "System Design",
             "Security",
             "Performance"
         ],
         "technologies": [
-            "Python", "SQL", "RESTful APIs", 
+            "Python", "SQL", "RESTful APIs", "GraphQL",
+            "Microservices", "Cloud Platforms",
+            "Message Brokers", "Caching", 
             "Databases", "Docker"
         ]
     },
     "frontend": {
         "key_skills": [
             "UI/UX",
+            "React",
+            "Hooks",
             "State Management",
             "Performance",
             "Responsive Design",
@@ -59,20 +66,20 @@ DIFFICULTY_GUIDELINES = {
     "junior": {
         "focus_areas": ["Basic concepts", "Code readability"],
         "complexity_level": "Low to Medium",
-        "practical_weight": 0.7,
-        "theoretical_weight": 0.3
+        "practical_weight": 0,
+        "theoretical_weight": 1
     },
     "mid": {
         "focus_areas": ["Design patterns", "System components"],
         "complexity_level": "Medium",
-        "practical_weight": 0.6,
-        "theoretical_weight": 0.4
+        "practical_weight": 0,
+        "theoretical_weight": 1
     },
     "senior": {
         "focus_areas": ["Architecture", "System design"],
         "complexity_level": "High",
-        "practical_weight": 0.5,
-        "theoretical_weight": 0.5
+        "practical_weight": 0.3,
+        "theoretical_weight": 0.7
     },
     "lead": {
         "focus_areas": ["System architecture", "Technical strategy"],
